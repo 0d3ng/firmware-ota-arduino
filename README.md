@@ -9,14 +9,16 @@ Secure Over-The-Air firmware update system untuk ESP8266 dengan **ED25519 signat
 - ✅ **MQTT Remote Trigger** - Update via MQTT message
 - ✅ **NTP Time Sync** - Accurate timestamps
 - ✅ **Version Management** - Smart version comparison
-- ✅ **Progress Monitoring** - Real-time download status
-- ✅ **Auto-Update Check** - Periodic checks every 5 minutes
+- ✅ **OTA Monitoring** - Real-time metrics via MQTT
+- ✅ **Auto Version Injection** - Git hash + timestamp
+- ✅ **CI/CD Ready** - Environment variable support
+- ✅ **Modular Architecture** - Clean code structure
 
 ## 📦 Memory Usage
 
 ```
-RAM:   40.0% (32,748 bytes)
-Flash: 35.4% (370,211 bytes)
+RAM:   40.2% (32,972 bytes)
+Flash: 35.6% (371,359 bytes)
 ```
 
 ## 🚀 Quick Start
@@ -29,36 +31,33 @@ pio pkg install
 
 ### 2. Configure WiFi & MQTT
 
-Edit `src/main.cpp`:
+Edit `src/config.h`:
 
 ```cpp
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+#define WIFI_SSID "YOUR_WIFI_SSID"
+#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
 #define MQTT_SERVER "broker.sinaungoding.com"
 #define MQTT_PORT 1884
+#define MQTT_USER "noureen"
+#define MQTT_PASS "1234"
 ```
 
-### 3. Generate ED25519 Keys
+### 3. Set Server URLs
 
-**Windows:**
-```powershell
-cd tools
-.\sign_firmware_ed25519.ps1 ..\..\.pio\build\esp12e\firmware.bin
-```
+Edit `src/config.h`:
 
-**Linux/Mac:**
-```bash
-cd tools
-./sign_firmware_ed25519.sh ../.pio/build/esp12e/firmware.bin
+```cpp
+#define MANIFEST_URL "http://server:8000/api/v1/firmware/manifest.json"
+#define FIRMWARE_URL "http://server:8000/api/v1/firmware/firmware-otaq.bin"
 ```
 
 ### 4. Update Public Key
 
-Copy public key hex from script output to `src/main.cpp`:
+Edit `src/config.h` dengan public key dari server:
 
 ```cpp
-const char PUBLIC_KEY_HEX[] = "your_64_char_hex_string";
+#define PUBLIC_KEY_HEX "your_64_char_hex_ed25519_public_key"
 ```
 
 ### 5. Build & Flash
@@ -80,6 +79,69 @@ mosquitto_pub -h broker.sinaungoding.com -p 1884 \
 
 - **[ED25519_GUIDE.md](ED25519_GUIDE.md)** - Complete ED25519 implementation guide
 - **[QUICKSTART.md](QUICKSTART.md)** - Quick reference (if exists)
+
+## 🔢 Version Management
+
+Firmware version auto-generated saat build menggunakan `version_inject.py`:
+
+**Format**: `{git_hash}-{timestamp}-{suffix}`
+
+**Local Build:**
+```bash
+pio run
+# Output: Building firmware version: 7fb3aeb-20260209T1533-local
+```
+
+**CI/CD Build:**
+```bash
+# Set environment variables
+export FIRMWARE_VERSION="1.2.3-production"
+export FIRMWARE_ALGORITHM="ed25519"
+pio run
+# Output: Building firmware version: 1.2.3-production
+#         Using firmware algorithm: ed25519
+```
+
+**GitHub Actions Example:**
+```yaml
+- name: Build Firmware
+  env:
+    FIRMWARE_VERSION: "${{ github.ref_name }}-build${{ github.run_number }}"
+    FIRMWARE_ALGORITHM: "ed25519"
+  run: pio run
+```
+
+**GitLab CI Example:**
+```yaml
+build:
+  variables:
+    FIRMWARE_VERSION: "$CI_COMMIT_TAG-build$CI_PIPELINE_ID"
+    FIRMWARE_ALGORITHM: "ed25519"
+  script:
+    - pio run
+```
+
+## 📡 OTA Monitoring
+
+Setiap stage OTA mengirim metrics ke MQTT topic `ota/metrics`:
+
+```json
+{
+  "stage": "download_firmware",
+  "elapsed_ms": 1234,
+  "free_heap": 45000,
+  "algorithm": "ed25519",
+  "timestamp": "2026-02-09T10:30:45"
+}
+```
+
+**Stages:**
+1. `download_manifest` - Download manifest.json
+2. `parse_manifest` - Parse version/hash/signature
+3. `download_firmware` - Download firmware binary
+4. `verify_hash` - SHA-256 verification
+5. `verify_signature` - ED25519 verification
+6. `flash_firmware` - Flash to ESP8266
 
 ## 🔒 Security Flow
 
@@ -107,72 +169,105 @@ Reboot
 ```
 firmware-ota-arduino/
 ├── src/
-│   └── main.cpp              # Main firmware code
-├── tools/
-│   ├── sign_firmware_ed25519.sh   # Signing script (Linux/Mac)
-│   └── sign_firmware_ed25519.ps1  # Signing script (Windows)
-├── platformio.ini            # PlatformIO configuration
+│   ├── main.cpp              # Main application
+│   ├── config.h              # Configuration
+│   ├── wifi_manager.h/.cpp   # WiFi management
+│   ├── ntp_sync.h/.cpp       # NTP synchronization
+│   ├── mqtt_handler.h/.cpp   # MQTT client
+│   └── ota_updater.h/.cpp    # OTA with ED25519
+├── version_inject.py         # Auto-version injection
+├── platformio.ini            # PlatformIO config
 ├── ED25519_GUIDE.md          # Complete guide
 └── README.md                 # This file
 ```
 
 ## 🔑 Key Management
 
-⚠️ **CRITICAL**: Keep `private_ed25519.pem` SECRET!
+⚠️ **CRITICAL**: ED25519 signing dilakukan di server/CI/CD, bukan di client!
 
-- Never commit private key to git
-- Store in secure location
-- Backup securely
-- Use HSM in production
+**Client (ESP8266) hanya perlu:**
+- Public key (32 bytes hex) di `config.h`
+- Tidak perlu private key
+- Tidak perlu signing tools
+
+**Server/CI/CD perlu:**
+- Private key untuk signing firmware
+- Tools untuk generate signature
+- Manifest.json dengan hash & signature
+
+## 🌐 Server Setup
+
+Server harus menyediakan:
+
+1. **Firmware Binary**
+   - URL: `http://server/firmware-otaq.bin`
+   - Signed dengan ED25519 private key
+
+2. **Manifest JSON**
+   - URL: `http://server/manifest.json`
+   - Format:
+   ```json
+   {
+     "version": "7fb3aeb-20260209T1533-local",
+     "hash": "sha256_hex_64_chars",
+     "signature": "ed25519_signature_128_hex_chars"
+   }
+   ```
+
+3. **MQTT Broker**
+   - Topic: `device/002/ota/update`
+   - Message: `"start"`
+
+**Proses di Server:**
+```bash
+# Build firmware
+pio run
+
+# Sign firmware (server-side tool)
+python sign_firmware.py firmware.bin > manifest.json
+
+# Upload both files
+scp firmware.bin server:/www/firmware-otaq.bin
+scp manifest.json server:/www/manifest.json
+```
 
 ## 🐛 Troubleshooting
 
 ### Signature Verification Failed
 
-**Solution**: Ensure public key in code matches private key used for signing.
+**Penyebab**: Public key di `config.h` tidak match dengan private key di server
 
-```bash
-# Re-sign firmware and get public key
-cd tools
-./sign_firmware_ed25519.sh ../.pio/build/esp12e/firmware.bin
-
-# Copy output to main.cpp
-```
+**Solusi**: 
+1. Pastikan public key hex di `config.h` benar
+2. Verifikasi signature di server sudah benar
+3. Check manifest.json format
 
 ### Hash Mismatch
 
-**Solution**: Re-sign and re-upload firmware to server.
+**Penyebab**: File firmware corrupt atau tidak match dengan manifest
 
-### More Issues?
+**Solusi**:
+1. Re-generate manifest.json di server
+2. Re-upload firmware.bin
+3. Clear cache jika ada
 
-See [ED25519_GUIDE.md](ED25519_GUIDE.md) troubleshooting section.
+### WiFi Not Connected
 
-## 📊 Manifest Format
-
-```json
-{
-  "version": "abc123-20260209T1530-build1",
-  "hash": "sha256_hex_64_chars",
-  "signature": "ed25519_signature_128_hex_chars"
-}
+**Solusi**: Check `config.h`:
+```cpp
+#define WIFI_SSID "your_ssid"
+#define WIFI_PASSWORD "your_password"
 ```
 
-## 🌐 Server Setup
+### MQTT Connection Failed
 
-1. **Build & Sign Firmware**
-   ```bash
-   pio run
-   cd tools
-   ./sign_firmware_ed25519.sh ../.pio/build/esp12e/firmware.bin
-   ```
-
-2. **Upload to Server**
-   - `firmware.bin` → `http://server/firmware-otaq.bin`
-   - `manifest.json` → `http://server/manifest.json`
-
-3. **Trigger Update**
-   - Via MQTT: `device/002/ota/update` with message `"start"`
-   - Or wait for auto-check (5 minutes)
+**Solusi**: Check `config.h`:
+```cpp
+#define MQTT_SERVER "broker_address"
+#define MQTT_PORT 1884
+#define MQTT_USER "username"
+#define MQTT_PASS "password"
+```
 
 ## ✅ Status
 
