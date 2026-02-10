@@ -58,10 +58,12 @@
 #define OTA_CHECK_INTERVAL 300000  // ms (5 minutes)
 #define OTA_DOWNLOAD_BUFFER 512  // bytes
 
-// ED25519 Public Key (32 bytes = 64 hex characters, no spaces, no 0x prefix)
-// Format: Pure hex string "0bc12f3d..." NOT "0x0B, 0xC1, ..."
-// ba89c973ffb9836d7c3c9f0b6bc869455cdb6db33aa299c297fd1726f567abd9 -> private key
-#define PUBLIC_KEY_HEX "0bc12f3d718204686b669042d921c91db12f83340e80c4837892828051fafcd8"
+// ECDSA-SHA256-P256 Public Key (64 bytes = 128 hex characters, no spaces, no 0x prefix)
+// Algorithm: ECDSA signature with SHA-256 hash and P-256 curve (secp256r1)
+// Format: Pure hex string (X coordinate + Y coordinate, uncompressed)
+// Private key (32 bytes): a059515a2bd9bb7473d4952fde93253609f07658cbaec5c0b77e6dc1501d5b4c
+// Store private key in GitHub Secrets as ECDSA_PRIVATE_KEY_HEX
+#define PUBLIC_KEY_HEX "2a1bef8f639b59b6e62ce51c0117c751255c84c346913cce94bb488c7ef212ca76961e555d9190f67b01d53cdbdafd7075001e78e64e0427017e7fb8829d3f5d"
 
 // TLS/SSL Certificates
 // CA certificates for MQTT and OTA are stored in certificates.h

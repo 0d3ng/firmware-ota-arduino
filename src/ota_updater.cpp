@@ -9,7 +9,7 @@
 #include <FS.h>
 #include <ArduinoJson.h>
 #include <bearssl/bearssl_hash.h>
-#include <Ed25519.h>
+#include <uECC.h>
 #include <time.h>
 
 OTAUpdater::OTAUpdater() : _mqttHandler(nullptr), _stageStartTime(0) {
@@ -193,7 +193,7 @@ int OTAUpdater::hexStringToBytes(const String& hexStr, uint8_t* output, size_t m
 }
 
 bool OTAUpdater::verifySignature(const uint8_t* hash, size_t hashLen, const uint8_t* signature, size_t sigLen) {
-    Serial.println("[OTA] Verifying ED25519 signature...");
+    Serial.println("[OTA] Verifying ECDSA-SHA256-P256 signature...");
     
     if (sigLen != 64) {
         Serial.printf("[OTA] Invalid signature length: %d (expected 64)\n", sigLen);
@@ -205,27 +205,36 @@ bool OTAUpdater::verifySignature(const uint8_t* hash, size_t hashLen, const uint
         return false;
     }
     
-    uint8_t publicKey[32];
+    // ECDSA-SHA256-P256 public key: 64 bytes (32 bytes X + 32 bytes Y)
+    // Algorithm: ECDSA signature with SHA-256 hash and P-256 curve (secp256r1)
+    uint8_t publicKey[64];
     String pubKeyHex = String(PUBLIC_KEY_HEX);
     
-    if (pubKeyHex.length() != 64) {
-        Serial.printf("[OTA] Invalid public key length: %d (expected 64 hex chars)\n", pubKeyHex.length());
+    if (pubKeyHex.length() != 128) {
+        Serial.printf("[OTA] Invalid public key length: %d (expected 128 hex chars)\n", pubKeyHex.length());
         return false;
     }
     
     int keyLen = hexStringToBytes(pubKeyHex, publicKey, sizeof(publicKey));
-    if (keyLen != 32) {
+    if (keyLen != 64) {
         Serial.println("[OTA] Failed to parse public key");
         return false;
     }
     
-    bool verified = Ed25519::verify(signature, publicKey, hash, hashLen);
+    // uECC verification for ECDSA P-256
+    // Curve: secp256r1 (NIST P-256)
+    const struct uECC_Curve_t* curve = uECC_secp256r1();
     
-    if (verified) {
-        Serial.println("[OTA] ✓ ED25519 signature verification PASSED");
+    // Verify signature with uECC
+    // uECC_verify(public_key, hash, hash_size, signature, curve)
+    // Returns 1 if signature is valid, 0 if invalid
+    int result = uECC_verify(publicKey, hash, hashLen, signature, curve);
+    
+    if (result == 1) {
+        Serial.println("[OTA] ✓ ECDSA-SHA256-P256 signature verification PASSED");
         return true;
     } else {
-        Serial.println("[OTA] ✗ ED25519 signature verification FAILED");
+        Serial.println("[OTA] ✗ ECDSA-SHA256-P256 signature verification FAILED");
         return false;
     }
 }
