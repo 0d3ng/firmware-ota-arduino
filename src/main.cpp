@@ -25,6 +25,11 @@ void setup() {
     delay(100);
     Serial.println("\n\n=== ESP8266 OTA Firmware Updater ===");
     Serial.printf("Current Version: %s\n", FIRMWARE_VERSION);
+    #if FIRMWARE_TLS == 1
+    Serial.println("TLS: Enabled (Secure Connection)");
+    #else
+    Serial.println("TLS: Disabled (Insecure Connection)");
+    #endif
     
     // Initialize SPIFFS
     if (!SPIFFS.begin()) {
