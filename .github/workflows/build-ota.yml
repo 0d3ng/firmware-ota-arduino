@@ -83,7 +83,7 @@ jobs:
           # measure signing time inside Python and write it into manifest.json
           python3 - <<'EOF'
           import json, hashlib, time
-          import nacl.bindings
+          from nacl.signing import SigningKey
           import os
 
           fw_file = "build/firmware-otaq.bin"
@@ -92,31 +92,31 @@ jobs:
           digest = hashlib.sha256(data).digest()
           print(f"Firmware {fw_file} size={len(data)} sha256={digest.hex()}")
 
-          # Load private key from GitHub Secrets (hex string)
+          # Load private key from GitHub Secrets (hex string - 32 bytes seed)
           private_key_hex = os.environ.get("ED25519_PRIVATE_KEY_HEX","").strip()
-          print(f"Raw key repr: {repr(private_key_hex)}")
-          print(f"Length after strip: {len(private_key_hex)}")
+          print(f"Private key length: {len(private_key_hex)} chars")
 
           if len(private_key_hex) != 64:
-              raise ValueError("Invalid ED25519 private key length")
+              raise ValueError(f"Invalid ED25519 private key length: {len(private_key_hex)}")
 
           seed = bytes.fromhex(private_key_hex)
+          sk = SigningKey(seed)
           
-          # Generate keypair from seed (Ed25519 standard)
-          # Returns: (public_key, secret_key) where secret_key is 64 bytes (seed + pk)
-          public_key, secret_key = nacl.bindings.crypto_sign_seed_keypair(seed)
+          # Get public key and verify it matches config.h
+          public_key = sk.verify_key.encode()
           print(f"Public key: {public_key.hex()}")
           
-          # Sign the hash directly using low-level bindings (no additional hashing)
-          # crypto_sign_detached signs the message directly without hashing
+          # Sign the 32-byte SHA256 hash directly
+          # Ed25519 will sign this 32-byte message as-is
           t0 = time.perf_counter()
-          signature = nacl.bindings.crypto_sign_detached(digest, secret_key)
+          signed_message = sk.sign(digest)
           t1 = time.perf_counter()
           signing_ms = (t1 - t0) * 1000.0
           
-          signature_hex = signature.hex()
+          # Extract detached signature (64 bytes)
+          signature_hex = signed_message.signature.hex()
           print(f"Signature: {signature_hex[:32]}...")
-          print(f"Signature length: {len(signature)} bytes")
+          print(f"Signature length: {len(signed_message.signature)} bytes")
 
           metadata = {
               "version": os.environ.get("VERSION", "1.0.0"),
