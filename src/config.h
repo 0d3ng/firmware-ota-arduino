@@ -61,7 +61,7 @@
 // ED25519 Public Key (32 bytes = 64 hex characters, no spaces, no 0x prefix)
 // Format: Pure hex string "0bc12f3d..." NOT "0x0B, 0xC1, ..."
 // ba89c973ffb9836d7c3c9f0b6bc869455cdb6db33aa299c297fd1726f567abd9 -> private key
-#define PUBLIC_KEY_HEX "0bc12f3d7182046866669042d921c91db12f83340e80c4837892828051fafcd8"
+#define PUBLIC_KEY_HEX "0bc12f3d718204686b669042d921c91db12f83340e80c4837892828051fafcd8"
 
 // TLS/SSL Certificates
 // CA certificates for MQTT and OTA are stored in certificates.h
