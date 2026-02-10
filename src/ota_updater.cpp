@@ -372,6 +372,27 @@ void OTAUpdater::performOTA(const String& expectedHashHex, const String& signatu
     
     ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
     
+    ESPhttpUpdate.onStart([]() {
+        Serial.println("[OTA] Flash update started");
+    });
+    
+    ESPhttpUpdate.onEnd([]() {
+        Serial.println("\n[OTA] Flash update finished");
+    });
+    
+    ESPhttpUpdate.onProgress([](int current, int total) {
+        static int lastPercent = -1;
+        int percent = (current * 100) / total;
+        if (percent != lastPercent && percent % 10 == 0) {
+            Serial.printf("[OTA] Flashing: %d%% (%d/%d)\n", percent, current, total);
+            lastPercent = percent;
+        }
+    });
+    
+    ESPhttpUpdate.onError([](int error) {
+        Serial.printf("[OTA] Flash error (%d): %s\n", error, ESPhttpUpdate.getLastErrorString().c_str());
+    });
+    
     Serial.println("[OTA] Starting HTTPS update...");
     Serial.printf("[OTA] Free heap: %d bytes\n", ESP.getFreeHeap());
     t_httpUpdate_return ret = ESPhttpUpdate.update(secureClient2, FIRMWARE_URL);
@@ -437,8 +458,10 @@ void OTAUpdater::monitorEndStage(const char* stageName) {
     unsigned long elapsed_us = micros() - _stageStartTime;
     unsigned long elapsed_ms = elapsed_us / 1000;
     
-    // Get heap info
+    // Get heap info (ESP8266 specific)
     uint32_t free_heap = ESP.getFreeHeap();
+    uint32_t max_free_block = ESP.getMaxFreeBlockSize();
+    uint8_t heap_fragmentation = ESP.getHeapFragmentation();
     
     // Get current time
     time_t now = time(nullptr);
@@ -451,14 +474,14 @@ void OTAUpdater::monitorEndStage(const char* stageName) {
              timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
              timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
     
-    // Create metrics JSON
-    char msg[256];
+    // Create metrics JSON with extended heap info
+    char msg[384];
     snprintf(msg, sizeof(msg),
-             "{\"stage\":\"%s\",\"elapsed_ms\":%lu,\"free_heap\":%u,\"algorithm\":\"ed25519\",\"timestamp\":\"%s\"}",
-             stageName, elapsed_ms, free_heap, timestamp);
+             "{\"stage\":\"%s\",\"elapsed_ms\":%lu,\"free_heap\":%u,\"max_block\":%u,\"fragmentation\":%u,\"algorithm\":\"%s\",\"version\":\"%s\",\"timestamp\":\"%s\"}",
+             stageName, elapsed_ms, free_heap, max_free_block, heap_fragmentation, FIRMWARE_ALGORITHM, FIRMWARE_VERSION, timestamp);
     
-    Serial.printf("[%s] Stage %s completed in %lu ms, free_heap=%u\n", 
-                  timestamp, stageName, elapsed_ms, free_heap);
+    Serial.printf("[%s] Stage %s: %lu ms, heap=%u, max_block=%u, frag=%u%%\n", 
+                  timestamp, stageName, elapsed_ms, free_heap, max_free_block, heap_fragmentation);
     
     // Publish to MQTT
     _mqttHandler->publish("ota/metrics", msg);

@@ -24,7 +24,8 @@ void setup() {
     Serial.begin(115200);
     delay(100);
     Serial.println("\n\n=== ESP8266 OTA Firmware Updater ===");
-    Serial.printf("Current Version: %s\n", FIRMWARE_VERSION);
+    Serial.printf("Current Version    : %s\n", FIRMWARE_VERSION);
+    Serial.printf("Firmware algorithm : %s\n", FIRMWARE_ALGORITHM);
     #if FIRMWARE_TLS == 1
     Serial.println("TLS: Enabled (Secure Connection)");
     #else
