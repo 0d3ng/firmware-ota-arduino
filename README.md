@@ -77,6 +77,7 @@ mosquitto_pub -h broker.sinaungoding.com -p 1884 \
 
 ## 📚 Documentation
 
+- **[docs/TLS_SETUP.md](docs/TLS_SETUP.md)** - TLS/MQTTS setup with CA certificate verification
 - **[docs/CICD_SETUP.md](docs/CICD_SETUP.md)** - Complete GitHub Actions CI/CD setup guide
 - **[ED25519_GUIDE.md](ED25519_GUIDE.md)** - Complete ED25519 implementation guide
 - **[.github/workflows/build-ota.yml](.github/workflows/build-ota.yml)** - Production-ready workflow

@@ -21,6 +21,15 @@
 #define WIFI_CONNECT_TIMEOUT 30  // seconds
 
 // MQTT Configuration
+// TLS Note: When FIRMWARE_TLS=1, MQTT uses secure connection (MQTTS) with CA verification
+// CA certificate is stored in mqtt_handler.cpp (caCertStr)
+// 
+// Get your server's CA certificate:
+//   openssl s_client -connect ota.sinaungoding.com:8883 -showcerts
+// Or if using Let's Encrypt, use their root CA:
+//   https://letsencrypt.org/certificates/
+// 
+// Update the CA cert in mqtt_handler.cpp for your specific server
 #if FIRMWARE_TLS == 1
 #define MQTT_SERVER "ota.sinaungoding.com"
 #define MQTT_PORT 8883
@@ -53,6 +62,10 @@
 // Format: Pure hex string "0bc12f3d..." NOT "0x0B, 0xC1, ..."
 // ba89c973ffb9836d7c3c9f0b6bc869455cdb6db33aa299c297fd1726f567abd9 -> private key
 #define PUBLIC_KEY_HEX "0bc12f3d7182046866669042d921c91db12f83340e80c4837892828051fafcd8"
+
+// TLS/SSL Certificates
+// CA certificates for MQTT and OTA are stored in certificates.h
+// Edit src/certificates.h to update CA certificates
 
 // Status Update Interval
 #define STATUS_UPDATE_INTERVAL 30000  // ms

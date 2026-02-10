@@ -1,5 +1,14 @@
 #include "mqtt_handler.h"
 #include "config.h"
+#include "certificates.h"
+
+#if FIRMWARE_TLS == 1
+#include <CertStoreBearSSL.h>
+
+// CA Certificate loaded from certificates.h
+BearSSL::X509List caCert(MQTT_CA_CERT);
+
+#endif
 
 MQTTHandler* MQTTHandler::_instance = nullptr;
 
@@ -7,12 +16,30 @@ MQTTHandler::MQTTHandler() : _mqttClient(_espClient) {
     _instance = this;
     _otaCallback = nullptr;
     _lastAttempt = 0;
+    
+#if FIRMWARE_TLS == 1
+    // Setup TLS for MQTT with certificate verification
+    // Option 1: Use CA certificate (recommended - similar to esp_crt_bundle_attach)
+    _espClient.setTrustAnchors(&caCert);
+    
+    // Option 2: Use certificate fingerprint (alternative)
+    // _espClient.setFingerprint("AA BB CC DD EE FF 00 11 22 33 44 55 66 77 88 99 AA BB CC DD");
+    
+    // Option 3: Skip verification (NOT RECOMMENDED - insecure!)
+    // _espClient.setInsecure();
+    
+    Serial.println("[MQTT] TLS mode enabled with CA verification");
+#endif
 }
 
 void MQTTHandler::begin() {
     _mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
     _mqttClient.setCallback(messageCallback);
-    Serial.printf("[MQTT] Configured server: %s:%d\n", MQTT_SERVER, MQTT_PORT);
+#if FIRMWARE_TLS == 1
+    Serial.printf("[MQTT] Configured MQTTS server: %s:%d\n", MQTT_SERVER, MQTT_PORT);
+#else
+    Serial.printf("[MQTT] Configured MQTT server: %s:%d\n", MQTT_SERVER, MQTT_PORT);
+#endif
 }
 
 void MQTTHandler::loop() {
