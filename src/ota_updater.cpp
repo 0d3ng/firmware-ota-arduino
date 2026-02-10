@@ -365,8 +365,6 @@ void OTAUpdater::performOTA(const String& expectedHashHex, const String& signatu
     monitorEndStage("verify_signature");
     
     Serial.println("[OTA] Proceeding to flash...");
-    monitorStartStage();
-    
     SPIFFS.remove("/firmware.tmp");
     
 #if FIRMWARE_TLS == 1
@@ -384,14 +382,11 @@ void OTAUpdater::performOTA(const String& expectedHashHex, const String& signatu
         Serial.println("[OTA] Flash update started");
     });
     
-    // Capture 'this' pointer for callback access to monitorEndStage
-    OTAUpdater* self = this;
-    ESPhttpUpdate.onEnd([self]() {
+    ESPhttpUpdate.onEnd([]() {
         Serial.println("\n[OTA] Flash update finished");
         Serial.println("[OTA] Update successful! Rebooting...");
-        // Monitor before restart
-        self->monitorEndStage("ota_finalize");
-        delay(2000);  // Wait for MQTT publish
+        // Don't call monitorEndStage here - it causes WDT
+        delay(100);  // Short delay before auto-restart
     });
     
     ESPhttpUpdate.onProgress([](int current, int total) {
@@ -422,14 +417,11 @@ void OTAUpdater::performOTA(const String& expectedHashHex, const String& signatu
         Serial.println("[OTA] Update started");
     });
     
-    // Capture 'this' pointer for callback access to monitorEndStage
-    OTAUpdater* self = this;
-    ESPhttpUpdate.onEnd([self]() {
+    ESPhttpUpdate.onEnd([]() {
         Serial.println("\n[OTA] Update finished");
         Serial.println("[OTA] Update successful! Rebooting...");
-        // Monitor before restart
-        self->monitorEndStage("ota_finalize");
-        delay(2000);  // Wait for MQTT publish
+        // Don't call monitorEndStage here - it causes WDT
+        delay(100);  // Short delay before auto-restart
     });
     
     ESPhttpUpdate.onProgress([](int current, int total) {
@@ -465,9 +457,6 @@ void OTAUpdater::monitorEndStage(const char* stageName) {
     // Feed watchdog
     yield();
     
-    // Keep MQTT connection alive
-    _mqttHandler->loop();
-    
     // Calculate elapsed time
     unsigned long elapsed_us = micros() - _stageStartTime;
     unsigned long elapsed_ms = elapsed_us / 1000;
@@ -497,12 +486,15 @@ void OTAUpdater::monitorEndStage(const char* stageName) {
     Serial.printf("[%s] Stage %s: %lu ms, heap=%u, max_block=%u, frag=%u%%\n", 
                   timestamp, stageName, elapsed_ms, free_heap, max_free_block, heap_fragmentation);
     
+    // Keep MQTT connection alive
+    _mqttHandler->loop();
+    
     // Publish to MQTT (with reconnect handling inside publish())
     _mqttHandler->publish("ota/metrics", msg);
     
     // Keep MQTT connection alive after publish
     _mqttHandler->loop();
     
-    // Feed watchdog after publish
+    // Feed watchdog
     yield();
 }
