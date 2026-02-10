@@ -44,8 +44,25 @@ bool MQTTHandler::isConnected() {
 }
 
 void MQTTHandler::publish(const char* topic, const char* payload) {
+    // Try to reconnect if disconnected
+    if (!_mqttClient.connected()) {
+        reconnect();
+    }
+    
+    // Publish with retry (3 attempts)
     if (_mqttClient.connected()) {
-        _mqttClient.publish(topic, payload, false);
+        for (int i = 0; i < 3; i++) {
+            if (_mqttClient.publish(topic, payload, false)) {
+                // Success
+                return;
+            }
+            // Failed, wait and retry
+            delay(100);
+            yield();
+        }
+        Serial.printf("[MQTT] Failed to publish to %s after 3 attempts\n", topic);
+    } else {
+        Serial.printf("[MQTT] Not connected, cannot publish to %s\n", topic);
     }
 }
 
