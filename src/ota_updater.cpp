@@ -354,7 +354,7 @@ void OTAUpdater::performOTA(const String& expectedHashHex, const String& signatu
             
         case HTTP_UPDATE_OK:
             Serial.println("[OTA] Update successful! Rebooting...");
-            monitorEndStage("flash_firmware");
+            monitorEndStage("ota_finalize");
             delay(1000);
             ESP.restart();
             break;

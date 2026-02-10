@@ -1,0 +1,146 @@
+name: PlatformIO Build & Secure OTA (ED25519)
+
+on:
+  pull_request:
+    branches:
+      - master
+      - development
+    types: [closed]
+
+jobs:
+  build-ota:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    environment: firmware env
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: ${{ runner.os }}-pio-${{ hashFiles('**/platformio.ini') }}
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zip curl
+
+      - name: Install Python dependencies
+        run: pip install platformio pynacl
+
+      - name: Set firmware version info
+        run: |
+          GIT_HASH=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date "+%Y%m%dT%H%M")
+          BUILD_NUMBER=${GITHUB_RUN_NUMBER}
+          FIRMWARE_VERSION="${GIT_HASH}-${BUILD_DATE}-build${BUILD_NUMBER}"
+          echo "FIRMWARE_VERSION=${FIRMWARE_VERSION}" >> $GITHUB_ENV
+          echo "FIRMWARE_ALGORITHM=ed25519" >> $GITHUB_ENV
+          echo "Firmware version: ${FIRMWARE_VERSION}"
+          echo "Firmware algorithm: ${FIRMWARE_ALGORITHM}"
+
+      - name: Build firmware
+        run: |
+          echo "=== Step 1: Show PlatformIO version ==="
+          pio --version
+
+          echo "=== Step 2: Clean build ==="
+          pio run --target clean
+
+          echo "=== Step 3: Build firmware ==="
+          pio run --environment esp12e
+
+          echo "=== Step 4: Copy firmware-otaq.bin ==="
+          cp .pio/build/esp12e/firmware.bin build/firmware-otaq.bin || mkdir -p build && cp .pio/build/esp12e/firmware.bin build/firmware-otaq.bin
+
+          echo "=== Step 5: Show firmware info ==="
+          ls -lh build/firmware-otaq.bin
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platformio-build-logs
+          path: .pio/build/esp12e/*.log
+
+      - name: Create manifest.json & package using ED25519
+        id: sign_package
+        env:
+          ED25519_PRIVATE_KEY_HEX: ${{ secrets.ED25519_PRIVATE_KEY_HEX }}
+          VERSION: ${{ env.FIRMWARE_VERSION }}
+        run: |
+          # measure entire step (python + zip)
+          START=$(date +%s%N)
+
+          # measure signing time inside Python and write it into manifest.json
+          python3 - <<'EOF'
+          import json, hashlib, time
+          from nacl.signing import SigningKey
+          import os
+          print("nacl version:", SigningKey.__module__)
+
+          fw_file = "build/firmware-otaq.bin"
+          with open(fw_file, "rb") as f:
+              data = f.read()
+          digest = hashlib.sha256(data).digest()
+          print(f"Firmware {fw_file} size={len(data)} sha256={digest.hex()}")
+
+          # Load private key from GitHub Secrets (hex string)
+          private_key_hex = os.environ.get("ED25519_PRIVATE_KEY_HEX","").strip()
+          print(f"Raw key repr: {repr(private_key_hex)}")
+          print(f"Length after strip: {len(private_key_hex)}")
+
+          if len(private_key_hex) != 64:
+              raise ValueError("Invalid ED25519 private key length")
+
+          seed = bytes.fromhex(private_key_hex)
+          sk = SigningKey(seed)
+
+          # time the signing (hashing already done above)
+          t0 = time.perf_counter()
+          signature = sk.sign(digest).signature.hex()
+          t1 = time.perf_counter()
+          signing_ms = (t1 - t0) * 1000.0
+
+          metadata = {
+              "version": os.environ.get("VERSION", "1.0.0"),
+              "hash": digest.hex(),
+              "signature": signature
+          }
+          print(f"Manifest: {metadata}")
+          with open("manifest.json", "w") as f:
+              json.dump(metadata, f, indent=2)
+
+          print(f"Signing elapsed_ms={signing_ms:.3f}")
+          EOF
+
+          zip -j firmware.zip build/firmware-otaq.bin manifest.json
+
+          END=$(date +%s%N)
+          ELAPSED_MS=$(( (END-START)/1000000 ))
+          echo "step_elapsed_ms=$ELAPSED_MS"
+          # export as step output for later steps if needed
+          echo "step_elapsed_ms=$ELAPSED_MS" >> $GITHUB_OUTPUT
+
+      - name: Upload package via API
+        run: |
+          STATUS=$(curl -s -o response.txt -w "%{http_code}" \
+            -X POST "${{ vars.API_URL }}/firmware/upload" \
+            -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
+            -F "file=@firmware.zip")
+
+          echo "Response code: $STATUS"
+          if [ "$STATUS" -ne 200 ]; then
+            echo "❌ Upload failed with status $STATUS"
+            cat response.txt
+            exit 1
+          fi
+          echo "✅ Upload successful"

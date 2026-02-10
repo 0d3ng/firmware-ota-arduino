@@ -77,8 +77,9 @@ mosquitto_pub -h broker.sinaungoding.com -p 1884 \
 
 ## 📚 Documentation
 
+- **[docs/CICD_SETUP.md](docs/CICD_SETUP.md)** - Complete GitHub Actions CI/CD setup guide
 - **[ED25519_GUIDE.md](ED25519_GUIDE.md)** - Complete ED25519 implementation guide
-- **[QUICKSTART.md](QUICKSTART.md)** - Quick reference (if exists)
+- **[.github/workflows/build-ota.yml](.github/workflows/build-ota.yml)** - Production-ready workflow
 
 ## 🔢 Version Management
 
@@ -109,6 +110,37 @@ pio run
     FIRMWARE_VERSION: "${{ github.ref_name }}-build${{ github.run_number }}"
     FIRMWARE_ALGORITHM: "ed25519"
   run: pio run
+```
+
+**Full CI/CD Workflow:**
+
+Project sudah include GitHub Actions workflow lengkap di [.github/workflows/build-ota.yml](.github/workflows/build-ota.yml) yang akan:
+
+1. **Auto-trigger** saat PR merged ke `master` atau `development`
+2. **Build firmware** dengan version auto-generated
+3. **Sign firmware** menggunakan ED25519 (dari GitHub Secrets)
+4. **Create manifest.json** dengan hash & signature
+5. **Upload** ke server OTA via API
+
+**Setup GitHub Secrets:**
+```
+ED25519_PRIVATE_KEY_HEX = your_64_char_hex_private_key
+API_TOKEN = your_bearer_token
+```
+
+**Setup GitHub Variables:**
+```
+API_URL = http://your-server.com:8000/api/v1
+```
+
+**Trigger:**
+```bash
+# Create PR, kemudian merge
+git checkout -b feature/new-update
+git add .
+git commit -m "Update feature"
+git push origin feature/new-update
+# Merge PR via GitHub UI → Auto build & deploy
 ```
 
 **GitLab CI Example:**
