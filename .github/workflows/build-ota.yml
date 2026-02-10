@@ -34,7 +34,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zip curl
 
       - name: Install Python dependencies
-        run: pip install platformio pynacl
+        run: pip install platformio cryptography
 
       - name: Set firmware version info
         run: |
@@ -83,7 +83,8 @@ jobs:
           # measure signing time inside Python and write it into manifest.json
           python3 - <<'EOF'
           import json, hashlib, time
-          from nacl.signing import SigningKey
+          from cryptography.hazmat.primitives.asymmetric import ed25519
+          from cryptography.hazmat.primitives import serialization
           import os
 
           fw_file = "build/firmware-otaq.bin"
@@ -99,24 +100,36 @@ jobs:
           if len(private_key_hex) != 64:
               raise ValueError(f"Invalid ED25519 private key length: {len(private_key_hex)}")
 
+          # Load ED25519 private key from 32-byte seed
           seed = bytes.fromhex(private_key_hex)
-          sk = SigningKey(seed)
+          private_key = ed25519.Ed25519PrivateKey.from_private_bytes(seed)
           
           # Get public key and verify it matches config.h
-          public_key = sk.verify_key.encode()
-          print(f"Public key: {public_key.hex()}")
+          public_key = private_key.public_key()
+          public_bytes = public_key.public_bytes(
+              encoding=serialization.Encoding.Raw,
+              format=serialization.PublicFormat.Raw
+          )
+          print(f"Public key: {public_bytes.hex()}")
           
-          # Sign the 32-byte SHA256 hash directly
-          # Ed25519 will sign this 32-byte message as-is
+          # Sign the 32-byte SHA256 hash directly (NO additional hashing)
+          # This is compatible with ESP8266 Crypto library Ed25519::verify()
           t0 = time.perf_counter()
-          signed_message = sk.sign(digest)
+          signature = private_key.sign(digest)
           t1 = time.perf_counter()
           signing_ms = (t1 - t0) * 1000.0
           
-          # Extract detached signature (64 bytes)
-          signature_hex = signed_message.signature.hex()
+          signature_hex = signature.hex()
           print(f"Signature: {signature_hex[:32]}...")
-          print(f"Signature length: {len(signed_message.signature)} bytes")
+          print(f"Signature length: {len(signature)} bytes")
+          
+          # Verify the signature locally to ensure it's correct
+          try:
+              public_key.verify(signature, digest)
+              print("✓ Signature verified locally")
+          except Exception as e:
+              print(f"✗ Local verification failed: {e}")
+              raise
 
           metadata = {
               "version": os.environ.get("VERSION", "1.0.0"),
