@@ -34,7 +34,7 @@ firmware_algorithm = os.getenv("FIRMWARE_ALGORITHM")
 
 if not firmware_algorithm:
     # Default algorithm for local builds
-    firmware_algorithm = "ed25519"
+    firmware_algorithm = "ecdsa-sha256-p256"
 
 print(f"Using firmware algorithm: {firmware_algorithm}")
 
