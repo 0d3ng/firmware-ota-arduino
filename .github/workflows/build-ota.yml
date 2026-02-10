@@ -83,9 +83,8 @@ jobs:
           # measure signing time inside Python and write it into manifest.json
           python3 - <<'EOF'
           import json, hashlib, time
-          from nacl.signing import SigningKey
+          import nacl.bindings
           import os
-          print("nacl version:", SigningKey.__module__)
 
           fw_file = "build/firmware-otaq.bin"
           with open(fw_file, "rb") as f:
@@ -102,18 +101,27 @@ jobs:
               raise ValueError("Invalid ED25519 private key length")
 
           seed = bytes.fromhex(private_key_hex)
-          sk = SigningKey(seed)
-
-          # time the signing (hashing already done above)
+          
+          # Generate keypair from seed (Ed25519 standard)
+          # Returns: (public_key, secret_key) where secret_key is 64 bytes (seed + pk)
+          public_key, secret_key = nacl.bindings.crypto_sign_seed_keypair(seed)
+          print(f"Public key: {public_key.hex()}")
+          
+          # Sign the hash directly using low-level bindings (no additional hashing)
+          # crypto_sign_detached signs the message directly without hashing
           t0 = time.perf_counter()
-          signature = sk.sign(digest).signature.hex()
+          signature = nacl.bindings.crypto_sign_detached(digest, secret_key)
           t1 = time.perf_counter()
           signing_ms = (t1 - t0) * 1000.0
+          
+          signature_hex = signature.hex()
+          print(f"Signature: {signature_hex[:32]}...")
+          print(f"Signature length: {len(signature)} bytes")
 
           metadata = {
               "version": os.environ.get("VERSION", "1.0.0"),
               "hash": digest.hex(),
-              "signature": signature
+              "signature": signature_hex
           }
           print(f"Manifest: {metadata}")
           with open("manifest.json", "w") as f:

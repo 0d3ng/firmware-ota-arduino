@@ -1,6 +1,7 @@
 #include "ota_updater.h"
 #include "mqtt_handler.h"
 #include "config.h"
+#include "certificates.h"
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
@@ -24,7 +25,16 @@ void OTAUpdater::checkForUpdates() {
         return;
     }
     
+    // Check if time is synced (required for TLS certificate verification)
+    time_t now = time(nullptr);
+    if (now < 1000000000) {
+        Serial.println("[OTA] Time not synced! TLS will fail. Please wait for NTP sync.");
+        return;
+    }
+    
     Serial.println("\n[OTA] Checking for updates...");
+    Serial.printf("[OTA] Current time: %s", ctime(&now));
+    Serial.printf("[OTA] Free heap: %d bytes\n", ESP.getFreeHeap());
     
     monitorStartStage();
     String manifestData;
@@ -61,16 +71,34 @@ bool OTAUpdater::downloadManifest(String& manifestData) {
     
 #if FIRMWARE_TLS == 1
     WiFiClientSecure secureClient;
-    secureClient.setInsecure();
-    http.begin(secureClient, MANIFEST_URL);
+    
+    // Configure TLS buffer sizes (reduce memory usage)
+    secureClient.setBufferSizes(512, 512);
+    
+    // Use fingerprint verification (lightweight, ~3KB memory vs ~20KB for CA cert)
+    secureClient.setFingerprint(OTA_FINGERPRINT);
+    
+    Serial.println("[HTTPS] TLS: Fingerprint verification");
+    Serial.printf("[HTTPS] Fingerprint: %s\n", OTA_FINGERPRINT);
+    Serial.printf("[HTTPS] Free heap: %d bytes\n", ESP.getFreeHeap());
+    
+    if (!http.begin(secureClient, MANIFEST_URL)) {
+        Serial.println("[HTTPS] ERROR: Failed to begin HTTPS connection");
+        return false;
+    }
 #else
-    http.begin(client, MANIFEST_URL);
+    if (!http.begin(client, MANIFEST_URL)) {
+        Serial.println("[HTTP] ERROR: Failed to begin connection");
+        return false;
+    }
 #endif
     
     http.addHeader("Accept-Encoding", "identity");
     http.addHeader("User-Agent", "ESP8266");
     
+    Serial.println("[HTTP] Sending GET request...");
     int httpCode = http.GET();
+    Serial.printf("[HTTP] Response code: %d\n", httpCode);
     
     if (httpCode == HTTP_CODE_OK) {
         manifestData = http.getString();
@@ -79,6 +107,17 @@ bool OTAUpdater::downloadManifest(String& manifestData) {
         return true;
     } else {
         Serial.printf("[HTTP] GET failed, error: %s\n", http.errorToString(httpCode).c_str());
+        
+#if FIRMWARE_TLS == 1
+        // Additional debugging for TLS errors
+        if (httpCode == HTTPC_ERROR_CONNECTION_FAILED) {
+            Serial.println("[HTTPS] Connection failed. Possible causes:");
+            Serial.println("  - Certificate fingerprint mismatch");
+            Serial.println("  - Server certificate changed (update FINGERPRINT)");
+            Serial.println("  - Time not synchronized (check NTP)");
+            Serial.printf("  - Free heap: %d bytes\n", ESP.getFreeHeap());
+        }
+#endif
         http.end();
         return false;
     }
@@ -193,6 +232,7 @@ bool OTAUpdater::verifySignature(const uint8_t* hash, size_t hashLen, const uint
 
 void OTAUpdater::performOTA(const String& expectedHashHex, const String& signatureHex) {
     Serial.println("[OTA] Starting firmware download and verification...");
+    Serial.printf("[OTA] Free heap: %d bytes\n", ESP.getFreeHeap());
     
     monitorStartStage();
     
@@ -201,13 +241,29 @@ void OTAUpdater::performOTA(const String& expectedHashHex, const String& signatu
     
 #if FIRMWARE_TLS == 1
     WiFiClientSecure secureClient;
-    secureClient.setInsecure();
-    http.begin(secureClient, FIRMWARE_URL);
+    
+    // Configure TLS buffer sizes
+    secureClient.setBufferSizes(512, 512);
+    
+    // Use fingerprint verification
+    secureClient.setFingerprint(OTA_FINGERPRINT);
+    
+    Serial.println("[HTTPS] TLS: Fingerprint verification");
+    Serial.printf("[HTTPS] Free heap: %d bytes\n", ESP.getFreeHeap());
+    
+    if (!http.begin(secureClient, FIRMWARE_URL)) {
+        Serial.println("[HTTPS] ERROR: Failed to begin HTTPS connection");
+        return;
+    }
 #else
-    http.begin(client, FIRMWARE_URL);
+    if (!http.begin(client, FIRMWARE_URL)) {
+        Serial.println("[HTTP] ERROR: Failed to begin connection");
+        return;
+    }
 #endif
 
     Serial.println("[OTA] Downloading firmware for verification...");
+    Serial.printf("[OTA] Free heap before download: %d bytes\n", ESP.getFreeHeap());
     int httpCode = http.GET();
     
     if (httpCode != HTTP_CODE_OK) {
@@ -307,11 +363,17 @@ void OTAUpdater::performOTA(const String& expectedHashHex, const String& signatu
     
 #if FIRMWARE_TLS == 1
     WiFiClientSecure secureClient2;
-    secureClient2.setInsecure();
+    
+    // Configure TLS buffer sizes
+    secureClient2.setBufferSizes(512, 512);
+    
+    // Use fingerprint verification for final flash
+    secureClient2.setFingerprint(OTA_FINGERPRINT);
     
     ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
     
     Serial.println("[OTA] Starting HTTPS update...");
+    Serial.printf("[OTA] Free heap: %d bytes\n", ESP.getFreeHeap());
     t_httpUpdate_return ret = ESPhttpUpdate.update(secureClient2, FIRMWARE_URL);
 #else
     ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);

@@ -1,21 +1,24 @@
 #ifndef CERTIFICATES_H
 #define CERTIFICATES_H
 
-// ============================================================================
-// TLS/SSL CERTIFICATES
-// ============================================================================
-// 
-// Update these certificates for your MQTT broker and OTA server
-// Get your server's CA cert: openssl s_client -connect your-server.com:8883 -showcerts
-//
-// IMPORTANT: Keep the R"EOF( ... )EOF" delimiters unchanged
-// ============================================================================
+#include <Arduino.h>
 
 #if FIRMWARE_TLS == 1
 
-// MQTT Broker CA Certificate
-// Current: ISRG Root X1 (Let's Encrypt Root CA)
-// Valid until: 2035-06-04
+// TLS Certificate Fingerprint (SHA-1) - 20 bytes
+// Much lighter than CA certificate (~3KB vs ~20KB memory usage)
+// Get fingerprint: echo | openssl s_client -connect ota.sinaungoding.com:443 2>/dev/null | openssl x509 -fingerprint -noout -sha1
+// Format: "AA BB CC DD EE FF ..." (20 bytes, space-separated)
+// IMPORTANT: Update fingerprint every time server certificate is renewed (~90 days)
+
+// MQTT Server Fingerprint
+#define MQTT_FINGERPRINT "05 02 A6 25 5D E5 1C B1 33 69 61 80 5E 76 D7 FC B1 E2 CB 39"
+
+// OTA Server Fingerprint (same as MQTT if same domain)
+#define OTA_FINGERPRINT "05 02 A6 25 5D E5 1C B1 33 69 61 80 5E 76 D7 FC B1 E2 CB 39"
+
+// Fallback: CA Certificate (kept for reference, not used when fingerprint is enabled)
+// You can remove this to save Flash memory
 static const char MQTT_CA_CERT[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
@@ -50,14 +53,6 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )EOF";
 
-// OTA Server CA Certificate (if different from MQTT)
-// Uncomment and update if your OTA server uses different CA
-// static const char OTA_CA_CERT[] PROGMEM = R"EOF(
-// -----BEGIN CERTIFICATE-----
-// YOUR_OTA_CA_CERTIFICATE_HERE
-// -----END CERTIFICATE-----
-// )EOF";
-
-#endif // FIRMWARE_TLS
+#endif
 
 #endif // CERTIFICATES_H
