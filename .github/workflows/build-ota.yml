@@ -164,4 +164,4 @@ jobs:
             cat response.txt
             exit 1
           fi
-          echo "✅ Upload successful "
+          echo "✅ Upload successful"
